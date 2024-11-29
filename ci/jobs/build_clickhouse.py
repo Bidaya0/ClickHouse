@@ -220,6 +220,8 @@ def main():
                 with_log=False,
             )
         )
+        if not results[-1].is_ok():
+            results[-1].set_files(CIFiles.UNIT_TESTS_BIN)
         res = results[-1].is_ok()
 
     Result.create_from(results=results, stopwatch=stop_watch).complete_job()
