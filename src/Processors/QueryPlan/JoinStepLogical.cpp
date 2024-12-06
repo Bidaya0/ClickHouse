@@ -648,4 +648,9 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
     return join_algorithm_ptr;
 }
 
+bool JoinStepLogical::hasPreparedJoinStorage() const
+{
+    return prepared_join_storage;
+}
+
 }

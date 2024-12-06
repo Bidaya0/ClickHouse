@@ -104,6 +104,25 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     }
 }
 
+bool optimizeTreeSimple(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, OptimizeStepFunc func)
+{
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(&root);
+    bool any_optimized = false;
+    while (!stack.empty())
+    {
+        QueryPlan::Node * current = stack.top();
+        stack.pop();
+
+        bool is_optimized = func(*current, nodes, optimization_settings);
+        any_optimized |= is_optimized;
+
+        for (auto * child : current->children)
+            stack.push(child);
+    }
+    return any_optimized;
+}
+
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
@@ -148,7 +167,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     stack.push_back({.node = &root});
 
-    bool has_new_join_step = false;
     while (!stack.empty())
     {
         {
@@ -169,10 +187,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
-
-                has_new_join_step = optimizeJoin(*frame.node, nodes, optimization_settings.keep_logical_steps) || has_new_join_step;
-                if (!has_new_join_step)
-                    optimizeJoinLegacy(*frame.node, nodes);
             }
 
             /// Traverse all children first.

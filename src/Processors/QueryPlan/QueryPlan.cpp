@@ -471,6 +471,10 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
             QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
         QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
+        bool has_optimized_join = QueryPlanOptimizations::optimizeTreeSimple(optimization_settings, *root, nodes, QueryPlanOptimizations::optimizeJoin);
+        if (!has_optimized_join)
+            QueryPlanOptimizations::optimizeTreeSimple(optimization_settings, *root, nodes, QueryPlanOptimizations::optimizeJoinLegacy);
+
         QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
         if (optimization_settings.build_sets)
             QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);

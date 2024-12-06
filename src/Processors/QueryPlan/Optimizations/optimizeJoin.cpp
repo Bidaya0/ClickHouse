@@ -59,27 +59,27 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node)
     return {};
 }
 
-void optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2)
-        return;
+        return false;
 
     const auto & join = join_step->getJoin();
     if (join->pipelineType() != JoinPipelineType::FillRightFirst || !join->isCloneSupported())
-        return;
+        return true;
 
     const auto & table_join = join->getTableJoin();
 
     /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
     bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
     if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
-        return;
+        return true;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
     if (table_join.hasUsing() || table_join.strictness() != JoinStrictness::All)
-        return;
+        return true;
 
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
@@ -99,11 +99,11 @@ void optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &)
     }
 
     if (!need_swap)
-        return;
+        return true;
 
     const auto & headers = join_step->getInputHeaders();
     if (headers.size() != 2)
-        return;
+        return true;
 
     const auto & left_stream_input_header = headers.front();
     const auto & right_stream_input_header = headers.back();
@@ -112,6 +112,7 @@ void optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &)
     updated_table_join->swapSides();
     auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
     join_step->setJoin(std::move(updated_join), /* swap_streams= */ true);
+    return true;
 }
 
 QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes)
@@ -204,8 +205,9 @@ void addSortingForMergeJoin(
     add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
 }
 
-bool optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool keep_logical)
+bool optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    bool keep_logical = optimization_settings.keep_logical_steps;
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
         return false;
