@@ -302,6 +302,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     else if (table_join_ptr && table_join_ptr->kind() == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
+    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Left)
+        right_stream_filter_push_down_input_columns_available = false;
+    else if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Right)
+        left_stream_filter_push_down_input_columns_available = false;
+
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
       * 2. ASOF Right join is not supported.

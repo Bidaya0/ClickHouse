@@ -318,6 +318,12 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     JoinInfoBuildContext build_context(join_node, left_columns, right_columns, planner_context);
 
     auto join_expression_constant = tryExtractConstantFromConditionNode(join_node.getJoinExpression());
+    if (join_node.getJoinExpression()->getNodeType() == QueryTreeNodeType::CONSTANT && !join_expression_constant.has_value())
+    {
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Wrong type {} of JOIN expression {}",
+            join_node.getJoinExpression()->getResultType()->getName(), join_node.getJoinExpression()->formatASTForErrorMessage());
+    }
+
     build_context.result_join_info.expression.constant_value = join_expression_constant;
 
     auto join_expression_node = getJoinExpressionFromNode(join_node);
@@ -348,6 +354,28 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             build_context.result_join_info.expression.condition = build_context.result_join_info.expression.disjunctive_conditions.back();
             build_context.result_join_info.expression.disjunctive_conditions.pop_back();
         }
+    }
+    else if (join_expression_constant.has_value())
+    {
+        auto & join_actions = build_context.result_join_expression_actions;
+
+        /// Joined table expression always has __tableN prefix, other columns will appear only in projections, so these names are safe
+        if (join_actions.left_pre_join_actions.tryFindInOutputs("__lhs_const"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__lhs_const' in JOIN expression {}", join_actions.left_pre_join_actions.dumpDAG());
+        if (join_actions.right_pre_join_actions.tryFindInOutputs("__rhs_const"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__rhs_const' in JOIN expression {}", join_actions.right_pre_join_actions.dumpDAG());
+
+        bool join_expression_value = join_expression_constant.value();
+        auto dt = std::make_shared<DataTypeUInt8>();
+        JoinActionRef lhs_node(&join_actions.left_pre_join_actions.addColumn(
+            ColumnWithTypeAndName(dt->createColumnConstWithDefaultValue(1), dt, "__lhs_const")));
+        join_actions.left_pre_join_actions.addOrReplaceInOutputs(*lhs_node.node);
+
+        JoinActionRef rhs_node(&join_actions.right_pre_join_actions.addColumn(
+            ColumnWithTypeAndName(dt->createColumnConst(1, join_expression_value ? 0 : 1), dt, "__rhs_const")));
+        join_actions.right_pre_join_actions.addOrReplaceInOutputs(*rhs_node.node);
+
+        build_context.result_join_info.expression.condition.predicates.emplace_back(JoinPredicate{lhs_node, rhs_node, PredicateOperator::Equals});
     }
 
     return std::make_unique<JoinStepLogical>(

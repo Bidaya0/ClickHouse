@@ -1935,15 +1935,18 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         return buildQueryPlanForJoinNodeLegacy(
             join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
 
-    auto & left_plan = left_join_tree_query_plan.query_plan;
-    auto & right_plan = right_join_tree_query_plan.query_plan;
-
     auto join_step_logical = buildJoinStepLogical(
-        left_plan.getCurrentHeader(),
-        right_plan.getCurrentHeader(),
+        left_join_tree_query_plan.query_plan.getCurrentHeader(),
+        right_join_tree_query_plan.query_plan.getCurrentHeader(),
         outer_scope_columns,
         join_node,
         planner_context);
+
+    if (!join_step_logical)
+        /// FIXME(@vdimir): Fall back for unsupported cases
+        return buildQueryPlanForJoinNodeLegacy(
+            join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
+
     join_step_logical->setPreparedJoinStorage(
         tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
     join_step_logical->setHashTableCacheKey(preCalculateCacheKey(join_node.getRightTableExpression(), select_query_info));
