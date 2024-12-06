@@ -5,6 +5,7 @@
 #include <Interpreters/JoinInfo.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
