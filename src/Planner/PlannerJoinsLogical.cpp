@@ -279,10 +279,10 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinInfoBuildContext & bu
         return;
 
     auto expr_source = builder_context.getExpressionSource(node);
-    if (expr_source == JoinInfoBuildContext::JoinSource::Left)
-        join_condition.left_filter_conditions.push_back(builder_context.addExpression(node, expr_source));
+    if (expr_source == JoinInfoBuildContext::JoinSource::Left || expr_source == JoinInfoBuildContext::JoinSource::None)
+        join_condition.left_filter_conditions.push_back(builder_context.addExpression(node, JoinInfoBuildContext::JoinSource::Left));
     else if (expr_source == JoinInfoBuildContext::JoinSource::Right)
-        join_condition.right_filter_conditions.push_back(builder_context.addExpression(node, expr_source));
+        join_condition.right_filter_conditions.push_back(builder_context.addExpression(node, JoinInfoBuildContext::JoinSource::Right));
     else
         join_condition.residual_conditions.push_back(builder_context.addExpression(node, expr_source));
 }
@@ -341,8 +341,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         buildJoinUsingCondition(join_expression_node, build_context, build_context.result_join_info.expression.condition);
         build_context.result_join_info.expression.is_using = true;
     }
-    /// JOIN ON some non-constant expression
-    else if (!join_expression_constant.has_value())
+    /// JOIN ON non-constant expression
+    else if (!join_expression_constant.has_value() || build_context.result_join_info.strictness == JoinStrictness::Asof)
     {
         if (join_expression_node->getNodeType() != QueryTreeNodeType::FUNCTION)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,

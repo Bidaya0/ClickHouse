@@ -82,13 +82,13 @@ void formatJoinCondition(const JoinCondition & join_condition, WriteBuffer & buf
     auto quote_string = std::views::transform([](const auto & s) { return fmt::format("({})", s.column_name); });
     auto format_predicate = std::views::transform([](const auto & p) { return fmt::format("{} {} {}", p.left_node.column_name, toString(p.op), p.right_node.column_name); });
     buf << "[";
-    buf << fmt::format("Keys: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
+    buf << fmt::format("Predcates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
     if (!join_condition.left_filter_conditions.empty())
-        buf << " " << fmt::format("Left: ({})", fmt::join(join_condition.left_filter_conditions | quote_string, ", "));
+        buf << " " << fmt::format("Left filter: ({})", fmt::join(join_condition.left_filter_conditions | quote_string, ", "));
     if (!join_condition.right_filter_conditions.empty())
-        buf << " " << fmt::format("Right: ({})", fmt::join(join_condition.right_filter_conditions | quote_string, ", "));
+        buf << " " << fmt::format("Right filter: ({})", fmt::join(join_condition.right_filter_conditions | quote_string, ", "));
     if (!join_condition.residual_conditions.empty())
-        buf << " " << fmt::format("Residual: ({})", fmt::join(join_condition.residual_conditions | quote_string, ", "));
+        buf << " " << fmt::format("Residual filter: ({})", fmt::join(join_condition.residual_conditions | quote_string, ", "));
     buf << "]";
 }
 
@@ -470,7 +470,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
 
     auto & table_join_clauses = table_join->getClauses();
 
-    if (!isCrossOrComma(join_info.kind))
+    if (!isCrossOrComma(join_info.kind) && !isPaste(join_info.kind))
     {
         bool has_keys = addJoinConditionToTableJoin(
             join_expression.condition, table_join_clauses.emplace_back(),
@@ -526,7 +526,8 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
             table_join_clauses.front().addKey(predicate.left_node.column_name, predicate.right_node.column_name, /* null_safe_comparison = */ false);
         }
         if (!asof_predicate_found)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression");
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
+                formatJoinCondition(join_info.expression.condition));
     }
 
     for (auto & join_condition : join_info.expression.disjunctive_conditions)
@@ -620,7 +621,13 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
         if (actions_outputs.empty())
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "No columns in JOIN result");
 
-        new_outputs.push_back(actions_outputs.at(0));
+        for (const auto * output : actions_outputs)
+        {
+            /// Add column as many times as it is used in output
+            /// Otherwise, invariants in other parts of the code may be violated
+            if (output->result_name == actions_outputs.at(0)->result_name)
+                new_outputs.push_back(output);
+        }
     }
 
     if (post_filter)

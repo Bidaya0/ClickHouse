@@ -1387,10 +1387,18 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
         size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
         if (expected_columns_count != result_sample_block.columns())
         {
+            Names left_block_names;
+            if (canRemoveColumnsFromLeftBlock())
+                std::ranges::copy(
+                    table_join->getOutputColumns(JoinTableSide::Left) | std::views::transform([](const auto & column) { return column.name; }),
+                    std::back_inserter(left_block_names));
+            else
+                left_block_names = left_sample_block.getNames();
+
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Unexpected number of columns in result sample block: {} expected {} ([{}] = [{}] + [{}] + [{}])",
                             result_sample_block.columns(), expected_columns_count,
-                            result_sample_block.dumpNames(), left_sample_block.dumpNames(),
+                            result_sample_block.dumpNames(), fmt::join(left_block_names, ", "),
                             required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
         }
     }
