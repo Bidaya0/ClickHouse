@@ -3,7 +3,7 @@ slug: /en/sql-reference/aggregate-functions/reference/groupuniqarrayarray
 sidebar_position: 154
 ---
 
-# groupUniqArray
+# groupUniqArrayArray
 
 Syntax: `groupUniqArrayArray(x)` or `groupUniqArrayArray(max_size)(x)`
 
